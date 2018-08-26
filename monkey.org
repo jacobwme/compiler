@@ -1,0 +1,141 @@
+* Chapter 2
+Hello Bytecode!
+
+. Take the Monkey expression 1 + 2
+. Tokenize and parse it using our existing lexer, token, and parser packages
+. Take the resulting AST, whose nodes are defined in our ast package
+. Pass it to the newly-built compiler, which compiles it to bytecode
+. Take the bytecode and hand it over to the also newly-built virtual machine which will execute it
+. Make sure that the virtual machine turned it in to 3
+
+The 1 + 2 expression will travel through all the major parts of the new 'interpreter'
+
+Lexer → Parser → Compiler → Virtual Machine
+
+In terms of data structures, there will be quite a fe transformations until we end up with the 3 as our result 
+
+String → Tokens → AST → Bytecode → Objects
+
+Since we'll be using a lot of the packages we build in the previous book, we can already handle everything up to the AST. After that we're entering unchartered territory. We need to define bytecode instructions, build a compiler and construct a virtual machine - just to turn 1 + 2 into 3!
+
+** First instructions
+The architecture of the virtual machine is the single-biggest influence.
+This is going to be a stack machine, because they are easier to implement than register machines.
+
+** Starting with Bytes
+
+Let's start to define the bytecode format
+
+#+BEGIN_SRC go :tangle monkey/code/code.go
+package code
+
+import (
+  "encoding/binary"
+  "fmt"
+)
+
+type Instructions []byte
+
+type Opcode byte
+
+#+END_SRC
+
+Instead of coding constants in bytecode, which would be slow, make an opcode for them
+
+#+BEGIN_SRC go :tangle monkey/code/code.go
+const (
+OpConstant Opcode = iota
+)
+
+#+END_SRC
+
+This particular byte is an iota
+
+#+BEGIN_SRC go :tangle monkey/code/code.go
+type Definition struct {
+Name string
+OperandWidths []int
+}
+
+var definitions = map[Opcode]*Definition{
+  OpConstant: {"OpConstant", []int{2}},
+}
+
+func Lookup(op byte) (*Definition, error) {
+  def, ok := definitions[Opcode(op)]
+  if !ok {
+    return nil, fmt.Errorf("opcode %d undefined", op)
+  }
+
+  return def, nil
+}
+
+#+END_SRC
+
+Now for a the bytecode encoder, test first
+#+BEGIN_SRC go :tangle monkey/code/code_test.go
+package code
+
+import "testing"
+
+func TestMake(t *testing.T) {
+	tests := []struct {
+		op        Opcode
+		operands  []int
+		expected  []byte
+	}{
+		{OpConstant, []int{65534}, []byte{byte(OpConstant), 255, 254}},
+	}
+
+	for _, tt := range tests {
+		instruction := Make(tt.op, tt.operands...)
+
+		if len(instruction) != len(tt.expected) {
+			t.Errorf("instruction has wrong length. want=%d, got=%d",
+				len(tt.expected), len(instruction))
+		}
+
+		for  i, b := range tt.expected {
+			if instruction[i] != tt.expected[i] {
+				t.Errorf("wrong byte at pos %d. want=%d, got=%d",
+					i, b, instruction[i])
+			}
+		}
+	}
+}
+
+#+END_SRC
+
+Now the actual Make function
+
+#+BEGIN_SRC go :tangle monkey/code/code.go
+func Make(op Opcode, operands ...int) []byte {
+  def, ok := definitions[op]
+  if !ok {
+   return []byte{}
+  }
+
+  instructionLen := 1
+  for _, w := range def.OperandWidths {
+    instructionLen += w
+  }
+
+  instruction := make([]byte, instructionLen)
+  instruction[0] = byte(op)
+
+  offset := 1
+  for i, o := range operands {
+    width := def.OperandWidths[i]
+    switch width {
+    case 2:
+      binary.BigEndian.PutUint16(instruction[offset:], uint16(o))
+    }
+    offset += width
+  }
+
+  return instruction
+}
+
+#+END_SRC
+** The smallest compiler
+This is 
